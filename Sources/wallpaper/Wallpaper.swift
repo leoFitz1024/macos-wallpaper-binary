@@ -320,7 +320,6 @@ public enum Wallpaper {
 	Names of available screens.
 	*/
 	public static var screenNames: [String] {
-		NSScreen.screens.map(\.
-			name)
+		NSScreen.screens.map(\.name)
 	}
 }
