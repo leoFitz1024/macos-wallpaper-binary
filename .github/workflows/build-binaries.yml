@@ -14,11 +14,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/.swiftpm
+          key: ${{ runner.os }}-swift-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
       - name: Show Swift version
         run: swift --version
 
+      - name: Resolve packages
+        run: swift package resolve
+
       - name: Build (release)
         run: swift build -c release
+
+      - name: Static check (manifest)
+        run: |
+          echo "Running swift package describe to validate Package.swift"
+          swift package describe --type json > /dev/null
+
+      - name: Run tests (if any)
+        run: |
+          if [ -d Tests ]; then
+            echo "Tests directory found — running swift test"
+            swift test -c release
+          else
+            echo "No Tests directory found — skipping tests"
+          fi
 
       - name: Locate and copy binary
         run: |
