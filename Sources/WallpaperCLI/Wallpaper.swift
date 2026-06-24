@@ -92,10 +92,19 @@ extension Main {
 		@Option(help: "Values: all, main, <index>")
 		var screen = Wallpaper.Screen.all
 
+		@Option(
+			help: "Directory to store/lookup generated Transparent.tiff (optional).",
+			transform: { (path: String) -> URL in
+				return URL(fileURLWithPath: path, isDirectory: true)
+			}
+		)
+		var transparentImageDirectory: URL?
+
 		mutating func run() throws {
 			try Wallpaper.set(
 				color,
-				screen: screen
+				screen: screen,
+				transparentImageDirectory: transparentImageDirectory
 			)
 		}
 	}
