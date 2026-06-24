@@ -2,12 +2,12 @@ name: Build and package Wallpaper
 
 on:
   push:
-    branches: [ 'fix', 'main' ]
+    branches: [ 'wallhub', 'fix' ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build (macOS, release)
+    name: Build (macOS, universal)
     runs-on: macos-latest
 
     steps:
@@ -30,8 +30,46 @@ jobs:
       - name: Resolve packages
         run: swift package resolve
 
-      - name: Build (release)
-        run: swift build -c release
+      - name: Build (universal)
+        run: |
+          set -euo pipefail
+
+          # Build separately for arm64 and x86_64 into distinct build paths to avoid conflicts
+          echo "Building for arm64..."
+          swift build -c release --arch arm64 --build-path .build-arm64
+
+          echo "Building for x86_64..."
+          swift build -c release --arch x86_64 --build-path .build-x86_64
+
+          # Prepare artifacts directory
+          mkdir -p artifacts
+
+          ARM_BIN=.build-arm64/release/wallpaper
+          X86_BIN=.build-x86_64/release/wallpaper
+
+          if [ ! -f "$ARM_BIN" ]; then
+            echo "arm64 binary not found at $ARM_BIN"
+            ls -R .build-arm64 || true
+            exit 1
+          fi
+
+          if [ ! -f "$X86_BIN" ]; then
+            echo "x86_64 binary not found at $X86_BIN"
+            ls -R .build-x86_64 || true
+            exit 1
+          fi
+
+          cp "$ARM_BIN" artifacts/wallpaper-arm64
+          cp "$X86_BIN" artifacts/wallpaper-x86_64
+
+          # Create universal (fat) binary
+          echo "Creating universal binary..."
+          lipo -create artifacts/wallpaper-arm64 artifacts/wallpaper-x86_64 -output artifacts/wallpaper
+          chmod +x artifacts/wallpaper
+
+          echo "Universal binary info:"
+          file artifacts/wallpaper || true
+          lipo -info artifacts/wallpaper || true
 
       - name: Static check (manifest)
         run: |
@@ -47,26 +85,9 @@ jobs:
             echo "No Tests directory found — skipping tests"
           fi
 
-      - name: Locate and copy binary
-        run: |
-          set -e
-          mkdir -p artifacts
-          if [ -f .build/release/wallpaper ]; then
-            cp .build/release/wallpaper artifacts/wallpaper
-          else
-            BIN_PATH=$(find .build -type f -name wallpaper -perm -111 | head -n 1 || true)
-            if [ -n "$BIN_PATH" ]; then
-              cp "$BIN_PATH" artifacts/wallpaper
-            else
-              echo "Binary not found in .build/release or nested build directories"
-              ls -R .build || true
-              exit 1
-            fi
-          fi
-
       - name: Package artifact
         run: |
-          TAR_NAME="wallpaper-macos-$(uname -m)-${GITHUB_SHA}.tar.gz"
+          TAR_NAME="wallpaper-macos-${GITHUB_SHA}.tar.gz"
           tar -czf "$TAR_NAME" -C artifacts wallpaper
           echo "Created $TAR_NAME"
 
