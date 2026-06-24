@@ -75,13 +75,15 @@ $ wallpaper set-solid-color --help
 
 OVERVIEW: Set solid color as wallpaper.
 
-USAGE: wallpaper set-solid-color <color> [--screen <screen>]
+USAGE: wallpaper set-solid-color <color> [--screen <screen>] [--transparent-image-directory <dir>]
 
 ARGUMENTS:
   <color>                 The color to use as wallpaper.
 
 OPTIONS:
   --screen <screen>       Values: all, main, <index> (default: all)
+  --transparent-image-directory <dir>
+                          Optional. Directory to store/lookup generated Transparent.tiff.
 ```
 
 ##### Set
@@ -94,6 +96,13 @@ wallpaper set unicorn.jpg
 
 ```sh
 wallpaper set-solid-color 0000ff
+```
+
+##### Set solid color (custom storage directory for Transparent.tiff)
+
+```sh
+# Use a custom directory where Transparent.tiff will be stored/looked up
+wallpaper set-solid-color 0000ff --transparent-image-directory "~/Library/Application Support/macos-wallpaper"
 ```
 
 ##### Get
