@@ -1,0 +1,50 @@
+name: Build and package Wallpaper
+
+on:
+  push:
+    branches: [ 'fix', 'main' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (macOS, release)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Locate and copy binary
+        run: |
+          set -e
+          mkdir -p artifacts
+          if [ -f .build/release/wallpaper ]; then
+            cp .build/release/wallpaper artifacts/wallpaper
+          else
+            BIN_PATH=$(find .build -type f -name wallpaper -perm -111 | head -n 1 || true)
+            if [ -n "$BIN_PATH" ]; then
+              cp "$BIN_PATH" artifacts/wallpaper
+            else
+              echo "Binary not found in .build/release or nested build directories"
+              ls -R .build || true
+              exit 1
+            fi
+          fi
+
+      - name: Package artifact
+        run: |
+          TAR_NAME="wallpaper-macos-$(uname -m)-${GITHUB_SHA}.tar.gz"
+          tar -czf "$TAR_NAME" -C artifacts wallpaper
+          echo "Created $TAR_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallpaper-binary
+          path: wallpaper-macos-*.tar.gz
