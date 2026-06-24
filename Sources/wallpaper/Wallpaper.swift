@@ -46,7 +46,7 @@ public enum Wallpaper {
 
 	https://openradar.appspot.com/radar?id=4959084113559552
 
-	Note: This workaround is only needed on macOS versions prior to macOS 26. On macOS 26+, the database schema may have changed or may not exist, and NSWorkspace.shared.desktopImageURL appears to return proper file paths.
+	Note: This workaround is only needed on macOS versions prior to macOS 26. On macOS 26+, the database schema may have changed or may not exist, and NSWorkspace.shared.desktopImageURL appears to re[...]
 	*/
 	private static func getFromDirectory(_ url: URL) throws -> URL {
 		// On macOS 26+, skip the database workaround as it may not be available
@@ -134,6 +134,128 @@ public enum Wallpaper {
 		}
 	}
 
+	// --- 新增：透明 TIFF 文件管理（优先本地 Application Support → 系统文件 → 生成并持久化） ---
+	private static let systemTransparentImageURL = URL(
+		fileURLWithPath: """
+		/System/Library/PreferencePanes/DesktopScreenEffectsPref.prefPane/Contents/Resources/DesktopPictures.prefPane/Contents/Resources/Transparent.tiff
+		"""
+	)
+
+	private static let transparentImageLock = NSLock()
+
+	private static func isUsableImage(_ url: URL) -> Bool {
+		let fileManager = FileManager.default
+
+		guard fileManager.fileExists(atPath: url.path) else {
+			return false
+		}
+
+		guard (try? url.checkResourceIsReachable()) == true else {
+			return false
+		}
+
+		return NSImage(contentsOf: url) != nil
+	}
+
+	private static func createTransparentTIFF(at url: URL) throws {
+		guard let bitmap = NSBitmapImageRep(
+			bitmapDataPlanes: nil,
+			pixelsWide: 1,
+			pixelsHigh: 1,
+			bitsPerSample: 8,
+			samplesPerPixel: 4,
+			hasAlpha: true,
+			isPlanar: false,
+			colorSpaceName: .deviceRGB,
+			bitmapFormat: .alphaFirst,
+			bytesPerRow: 0,
+			bitsPerPixel: 0
+		) else {
+			throw NSError(
+				domain: "WallpaperError",
+				code: 2,
+				userInfo: [
+					NSLocalizedDescriptionKey:
+						"Failed to create transparent bitmap."
+				]
+			)
+		}
+
+		// 1 × 1 像素，ARGB 全部为 0，即完全透明。
+		if let pixels = bitmap.bitmapData {
+			for index in 0..<(bitmap.bytesPerRow * bitmap.pixelsHigh) {
+				pixels[index] = 0
+			}
+		}
+
+		guard let tiffData = bitmap.tiffRepresentation else {
+			throw NSError(
+				domain: "WallpaperError",
+				code: 3,
+				userInfo: [
+					NSLocalizedDescriptionKey:
+						"Failed to encode transparent TIFF."
+				]
+			)
+		}
+
+		try tiffData.write(to: url, options: .atomic)
+	}
+
+	private static func transparentImageURL(
+		storageDirectory: URL? = nil
+	) throws -> URL {
+		transparentImageLock.lock()
+		defer { transparentImageLock.unlock() }
+
+		let fileManager = FileManager.default
+
+		let directory: URL
+
+		if let storageDirectory {
+			directory = storageDirectory
+		} else {
+			let appSupportDirectory = try fileManager.url(
+				for: .applicationSupportDirectory,
+				in: .userDomainMask,
+				appropriateFor: nil,
+				create: true
+			)
+
+			directory = appSupportDirectory.appendingPathComponent(
+				"macos-wallpaper",
+				isDirectory: true
+			)
+		}
+
+		let localTransparentImageURL = directory.appendingPathComponent(
+			"Transparent.tiff",
+			isDirectory: false
+		)
+
+		// 1. 优先使用自己以前生成的文件。
+		if isUsableImage(localTransparentImageURL) {
+			return localTransparentImageURL
+		}
+
+		// 2. 其次兼容旧版 macOS 的系统文件。
+		if isUsableImage(systemTransparentImageURL) {
+			return systemTransparentImageURL
+		}
+
+		// 3. 系统文件也没有时，自己生成并持久化。
+		try fileManager.createDirectory(
+			at: directory,
+			withIntermediateDirectories: true,
+			attributes: nil
+		)
+
+		try createTransparentTIFF(at: localTransparentImageURL)
+
+		return localTransparentImageURL
+	}
+	// --- /新增结束 ---
+
 	/**
 	Set an image URL as wallpaper.
 	*/
@@ -177,16 +299,28 @@ public enum Wallpaper {
 	/**
 	Set a solid color as wallpaper.
 	*/
-	public static func set(_ solidColor: NSColor, screen: Screen = .all) throws {
-		let transparentImage = URL(fileURLWithPath: "/System/Library/PreferencePanes/DesktopScreenEffectsPref.prefPane/Contents/Resources/DesktopPictures.prefPane/Contents/Resources/Transparent.tiff")
+	public static func set(
+		_ solidColor: NSColor,
+		screen: Screen = .all,
+		transparentImageDirectory: URL? = nil
+	) throws {
+		let transparentImage = try transparentImageURL(
+			storageDirectory: transparentImageDirectory
+		)
 
-		try set(transparentImage, screen: screen, scale: .fit, fillColor: solidColor)
+		try set(
+			transparentImage,
+			screen: screen,
+			scale: .fit,
+			fillColor: solidColor
+		)
 	}
 
 	/**
 	Names of available screens.
 	*/
 	public static var screenNames: [String] {
-		NSScreen.screens.map(\.name)
+		NSScreen.screens.map(\.
+			name)
 	}
 }
